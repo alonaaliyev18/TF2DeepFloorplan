@@ -40,6 +40,7 @@ def decodeAllRaw(
 def preprocess(
     img: tf.Tensor, bound: tf.Tensor, room: tf.Tensor, size: int = 512
 ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
+
     img = tf.cast(img, dtype=tf.float32)
     img = tf.reshape(img, [-1, size, size, 3]) / 255
     bound = tf.reshape(bound, [-1, size, size])
@@ -50,7 +51,10 @@ def preprocess(
 
 
 def loadDataset(size: int = 512) -> tf.data.Dataset:
-    raw_dataset = tf.data.TFRecordDataset("r3d.tfrecords")
+    """
+    takes .tfrecords file, reads it by bytes and then maps it into a dictionary, with image, boundary, rooms and doors
+    """
+    raw_dataset = tf.data.TFRecordDataset(r'C:\Users\MixedRealityLab\PycharmProjects\TF2DeepFloorplan\dataset\r3d.tfrecords')
     parsed_dataset = raw_dataset.map(_parse_function)
     return parsed_dataset
 

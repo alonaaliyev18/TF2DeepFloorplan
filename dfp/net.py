@@ -53,7 +53,7 @@ def upconv2d(
     pad: str = "same",
     act: str = "relu",
 ) -> tf.keras.Sequential:
-    result = tf.keras.Sequential()
+    result = tf.keras.Sequential() #creating a sequential model
     result.add(
         tf.keras.layers.Conv2DTranspose(dim, size, strides=stride, padding=pad)
     )
@@ -72,8 +72,9 @@ class deepfloorplanModel(Model):
     def __init__(self, config: argparse.Namespace = None):
         super(deepfloorplanModel, self).__init__()
         self._vgg16init()
-        # room boundary prediction (rbp)
+
         dimlist = [256, 128, 64, 32]
+        # room boundary pixels
         self.rbpups = [upconv2d(dim=d, act="linear") for d in dimlist]
         self.rbpcv1 = [conv2d(dim=d, act="linear") for d in dimlist]
         self.rbpcv2 = [conv2d(dim=d) for d in dimlist]
