@@ -31,6 +31,7 @@ def _parse_function(example_proto: bytes) -> Dict[str, tf.Tensor]:
 def decodeAllRaw(
     x: Dict[str, tf.Tensor]
 ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    """returns tensor (representing image) for input image, room boundary image and room image """
     image = tf.io.decode_raw(x["image"], tf.uint8)
     boundary = tf.io.decode_raw(x["boundary"], tf.uint8)
     room = tf.io.decode_raw(x["room"], tf.uint8)
@@ -42,11 +43,11 @@ def preprocess(
 ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
 
     img = tf.cast(img, dtype=tf.float32)
-    img = tf.reshape(img, [-1, size, size, 3]) / 255
-    bound = tf.reshape(bound, [-1, size, size])
-    room = tf.reshape(room, [-1, size, size])
-    hot_b = tf.one_hot(bound, 3, axis=-1)
-    hot_r = tf.one_hot(room, 9, axis=-1)
+    img = tf.reshape(img, [-1, size, size, 3]) / 255 # normalize
+    bound = tf.reshape(bound, [-1, size, size]) #reshape to 512*512
+    room = tf.reshape(room, [-1, size, size]) #reshape to 512*512
+    hot_b = tf.one_hot(bound, 3, axis=-1) # classifiers - binary
+    hot_r = tf.one_hot(room, 9, axis=-1) # classifiers - binary
     return img, bound, room, hot_b, hot_r
 
 

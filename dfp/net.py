@@ -70,49 +70,58 @@ def up_bilinear(dim: int) -> tf.keras.Sequential:
 
 class deepfloorplanModel(Model):
     def __init__(self, config: argparse.Namespace = None):
+        """figure 4"""
         super(deepfloorplanModel, self).__init__()
         self._vgg16init()
 
         dimlist = [256, 128, 64, 32]
+        """figure 4 - room boundary  features"""
         # room boundary pixels
-        self.rbpups = [upconv2d(dim=d, act="linear") for d in dimlist]
-        self.rbpcv1 = [conv2d(dim=d, act="linear") for d in dimlist]
-        self.rbpcv2 = [conv2d(dim=d) for d in dimlist]
-        self.rbpfinal = up_bilinear(3)
+        self.rbpups = [upconv2d(dim=d, act="linear") for d in dimlist]  # upsampling convolution linear layer that changes from 512*512 to 512*512*256
+        self.rbpcv1 = [conv2d(dim=d, act="linear") for d in dimlist]     # list of 2D convolution, # layers =  256, 128 ,64, 32 linear
+        self.rbpcv2 = [conv2d(dim=d) for d in dimlist] #list of 2D convolutinal layers reLU activation
+        self.rbpfinal = up_bilinear(3) #bilinear upsameling - output depth is 3
 
+        """ figure 4 - room type features"""
         # room type prediction (rtp)
-        self.rtpups = [upconv2d(dim=d, act="linear") for d in dimlist]
-        self.rtpcv1 = [conv2d(dim=d, act="linear") for d in dimlist]
-        self.rtpcv2 = [conv2d(dim=d) for d in dimlist]
+        self.rtpups = [upconv2d(dim=d, act="linear") for d in dimlist] # upsampling convolution linear layer that changes from 512*512 to 512*512*256
+        self.rtpcv1 = [conv2d(dim=d, act="linear") for d in dimlist]  # list of 2D convolution, # layers =  256, 128 ,64, 32 linear
+        self.rtpcv2 = [conv2d(dim=d) for d in dimlist] #list of 2D convolutinal layers reLU activation
 
         # attention map
-        self.atts1 = [conv2d(dim=dimlist[i]) for i in range(len(dimlist))]
-        self.atts2 = [conv2d(dim=dimlist[i]) for i in range(len(dimlist))]
+        """figure 4 in article - attention weights"""
+        # An attention map is a visualization to highlight the most relevant regions or parts of an input data instance
+        self.atts1 = [conv2d(dim=dimlist[i]) for i in range(len(dimlist))] # list of 2D convolution, # layers =  256, 128 ,64, 32 RELU
+        self.atts2 = [conv2d(dim=dimlist[i]) for i in range(len(dimlist))] # list of 2D convolution, # layers =  256, 128 ,64, 32 Relu
         self.atts3 = [
-            conv2d(dim=1, size=1, act="sigmoid") for i in range(len(dimlist))
+            conv2d(dim=1, size=1, act="sigmoid") for i in range(len(dimlist)) # list of 2D convolution, # layers =  256, 128 ,64, 32 sigmoid
         ]
 
         # reduce the tensor depth
-        self.xs1 = [conv2d(dim=d) for d in dimlist]
-        self.xs2 = [conv2d(dim=1, size=1, act="linear") for d in dimlist]
+        self.xs1 = [conv2d(dim=d) for d in dimlist] # convolutional layers with output depth [256, 128, 64, 32] Relu
+        self.xs2 = [conv2d(dim=1, size=1, act="linear") for d in dimlist] # convolution layers with output depth 1
 
         # context conv2d
         dak = [9, 17, 33, 65]  # kernel_shape=[h,v,inc,outc]
+
+        """figure 4 in article - direction aware weights """
         # horizontal
-        self.hs = [self.constant_kernel((d, 1, 1, 1)) for d in dak]
+        self.hs = [self.constant_kernel((d, 1, 1, 1)) for d in dak] #shapes for kernel - horizontal
         self.hf = [
             tf.keras.layers.Conv2D(
-                1,
-                [dak[i], 1],
+                1, # output depth
+                [dak[i], 1], #size
                 strides=1,
                 padding="same",
-                trainable=False,
+                trainable=False, #weights not changing
                 use_bias=False,
                 weights=[self.hs[i]],
             )
             for i in range(len(dak))
-        ]
+        ] # creating list of convolution layers with the kernels for weights
+
         # vertical
+        # same as horizontal but vertical
         self.vs = [self.constant_kernel((1, d, 1, 1)) for d in dak]
         self.vf = [
             tf.keras.layers.Conv2D(
@@ -126,6 +135,7 @@ class deepfloorplanModel(Model):
             )
             for i in range(len(dak))
         ]
+
         # diagonal
         self.ds = [self.constant_kernel((d, d, 1, 1), diag=True) for d in dak]
         self.df = [
@@ -140,6 +150,7 @@ class deepfloorplanModel(Model):
             )
             for i in range(len(dak))
         ]
+
         # diagonal flip
         self.dfs = [
             self.constant_kernel((d, d, 1, 1), diag=True, flip=True)
@@ -157,7 +168,9 @@ class deepfloorplanModel(Model):
             )
             for i in range(len(dak))
         ]
+
         # expand dim
+        """ adds all the directional kernels"""
         self.ed = [conv2d(dim=d, size=1, act="linear") for d in dimlist]
         # learn rich feature
         self.lrf = [conv2d(dim=d) for d in dimlist]
