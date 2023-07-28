@@ -7,17 +7,17 @@ def cross_two_tasks_weight(
     y1: tf.Tensor, y2: tf.Tensor
 ) -> Tuple[tf.Tensor, tf.Tensor]:
     p1, p2 = tf.keras.backend.sum(y1), tf.keras.backend.sum(y2)
-    w1, w2 = p2 / (p1 + p2), p1 / (p1 + p2)
+    w1, w2 = p2 / (p1 + p2), p1 / (p1 + p2) # normalize by sum
     return w1, w2
 
 
 def balanced_entropy(x: tf.Tensor, y: tf.Tensor) -> tf.Tensor:
     eps = 1e-6
     z = tf.keras.activations.softmax(x)
-    cliped_z = tf.keras.backend.clip(z, eps, 1 - eps)
+    cliped_z = tf.keras.backend.clip(z, eps, 1 - eps)  # limit the values of the softmax to [eps, 1-eps] - remove 0 and 1 values
     log_z = tf.keras.backend.log(cliped_z)
 
-    num_classes = y.shape.as_list()[-1]
+    num_classes = y.shape.as_list()[-1]  #depth
     ind = tf.keras.backend.argmax(y, axis=-1)
     total = tf.keras.backend.sum(y)
 
@@ -28,18 +28,18 @@ def balanced_entropy(x: tf.Tensor, y: tf.Tensor) -> tf.Tensor:
         m_c.append(
             tf.keras.backend.cast(
                 tf.keras.backend.equal(ind, c_), dtype=tf.int32
-            )
+            )  # 1 where the value is equal to c_
         )
         n_c.append(
             tf.keras.backend.cast(
                 tf.keras.backend.sum(m_c[-1]), dtype=tf.float32
-            )
+            )  # number of values from c_ class
         )
 
     c: List[int] = []
     for i in range(num_classes):
         c.append(total - n_c[i])
-    tc = tf.math.add_n(c)
+    tc = tf.math.add_n(c)  # sum of all elements
 
     for i in range(num_classes):
         w = c[i] / tc

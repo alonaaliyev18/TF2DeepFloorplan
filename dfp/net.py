@@ -75,14 +75,16 @@ class deepfloorplanModel(Model):
         self._vgg16init()
 
         dimlist = [256, 128, 64, 32]
-        """figure 4 - room boundary  features"""
+        """figure 4 - room boundary  features (input) - VGG for room boundary features"""
+        #TODO can update to resnet here
+
         # room boundary pixels
         self.rbpups = [upconv2d(dim=d, act="linear") for d in dimlist]  # upsampling convolution linear layer that changes from 512*512 to 512*512*256
         self.rbpcv1 = [conv2d(dim=d, act="linear") for d in dimlist]     # list of 2D convolution, # layers =  256, 128 ,64, 32 linear
         self.rbpcv2 = [conv2d(dim=d) for d in dimlist] #list of 2D convolutinal layers reLU activation
         self.rbpfinal = up_bilinear(3) #bilinear upsameling - output depth is 3
 
-        """ figure 4 - room type features"""
+        """ figure 4 - room type features VGG for room type features"""
         # room type prediction (rtp)
         self.rtpups = [upconv2d(dim=d, act="linear") for d in dimlist] # upsampling convolution linear layer that changes from 512*512 to 512*512*256
         self.rtpcv1 = [conv2d(dim=d, act="linear") for d in dimlist]  # list of 2D convolution, # layers =  256, 128 ,64, 32 linear
@@ -170,7 +172,6 @@ class deepfloorplanModel(Model):
         ]
 
         # expand dim
-        """ adds all the directional kernels"""
         self.ed = [conv2d(dim=d, size=1, act="linear") for d in dimlist]
         # learn rich feature
         self.lrf = [conv2d(dim=d) for d in dimlist]
@@ -178,11 +179,14 @@ class deepfloorplanModel(Model):
         self.rtpfinal = up_bilinear(9)
 
     def _vgg16init(self):
+        """ uses existing vgg that is pre-trained on image net data set and is not trainable (frozen) that extracts features from the input"""
+        """ output shape: 16 * 16 * 512 """
         self.vgg16 = VGG16(
             weights="imagenet", include_top=False, input_shape=(512, 512, 3)
         )
         for layer in self.vgg16.layers:
             layer.trainable = False
+
 
     def constant_kernel(
         self,
@@ -205,55 +209,67 @@ class deepfloorplanModel(Model):
     def non_local_context(
         self, t1: tf.Tensor, t2: tf.Tensor, idx: int, stride: int = 4
     ) -> tf.Tensor:
-        N, H, W, C = t1.shape.as_list()
-        hs = H // stride if (H // stride) > 1 else (stride - 1)
-        vs = W // stride if (W // stride) > 1 else (stride - 1)
+        """figure 4 - room type decoder learns the contextual features for predicting the room type pixels"""
+
+        N, H, W, C = t1.shape.as_list()  # batch size, height, width and channels
+        hs = H // stride if (H // stride) > 1 else (stride - 1)  # height output dimension
+        vs = W // stride if (W // stride) > 1 else (stride - 1)  # width output dimension
         hs = hs if (hs % 2 != 0) else hs + 1
         vs = hs if (vs % 2 != 0) else vs + 1
         a = t1
         x = t2
+
+        """apply attention map on te room boundary layer tensor"""
         a = self.atts1[idx](a)
         a = self.atts2[idx](a)
         a = self.atts3[idx](a)
-        a = tf.keras.activations.sigmoid(a)
+        a = tf.keras.activations.sigmoid(a)  # moves the range to between 0 and 1
+
+        """apply on the room type layer features"""
         x = self.xs1[idx](x)
         x = self.xs2[idx](x)
-        x = a * x
 
+        x = a * x  # takes the interesting parts of x
+
+        """apply direction aware kernels"""
         h = self.hf[idx](x)
         v = self.vf[idx](x)
         d = self.df[idx](x)
         f = self.dff[idx](x)
-        c1 = a * (h + v + d + f)
-        c1 = self.ed[idx](c1)
 
-        features = tf.concat([t2, c1], axis=3)
-        out = self.lrf[idx](features)
+        """multiply attention map with the sum of the kernels results"""
+        c1 = a * (h + v + d + f)
+        c1 = self.ed[idx](c1)  # expend conv
+
+        features = tf.concat([t2, c1], axis=3)  #adds to the depth
+        out = self.lrf[idx](features)  # cnn on the spatial contexture
         return out
 
     def call(self, x: tf.Tensor) -> Tuple[tf.Tensor, tf.Tensor]:
         features = []
         feature = x
+        # TODO: switch to resnet here (try)
         for layer in self.vgg16.layers:
-            feature = layer(feature)
-            if layer.name.find("pool") != -1:
+            feature = layer(feature)  # apply layer on the features and update it
+            if layer.name.find("pool") != -1:  # not adding pooling layers (reduces the number of parameters)
                 features.append(feature)
         x = feature
         features = features[::-1]
         featuresrbp = []
+        # room boundary decoder
         for i in range(len(self.rbpups)):
             x = self.rbpups[i](x) + self.rbpcv1[i](features[i + 1])
             x = self.rbpcv2[i](x)
             featuresrbp.append(x)
         logits_cw = tf.keras.backend.resize_images(
             self.rbpfinal(x), 2, 2, "channels_last"
-        )
+        )  # upsampleing (resize image with 2 factor to width and height
         x = feature
         for i in range(len(self.rtpups)):
             x = self.rtpups[i](x) + self.rtpcv1[i](features[i + 1])
             x = self.rtpcv2[i](x)
-            x = self.non_local_context(featuresrbp[i], x, i)
+            x = self.non_local_context(featuresrbp[i], x, i) # use contextual data  from the room boundary matching layer
         logits_r = tf.keras.backend.resize_images(
             self.rtpfinal(x), 2, 2, "channels_last"
-        )
+        ) # upsampleing (resize image with 2 factor to width and height
         return logits_r, logits_cw
